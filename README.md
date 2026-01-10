@@ -1,12 +1,12 @@
-NobodyRecon
+##NobodyRecon
 
-Offline Recon Radar (Termux / PC)
+**Offline Recon Radar (Termux / PC)**
 
-- Offline
-- Keine Kamera
-- Kein Mikrofon
-- Nur WLAN-Signale
-- Logs bleiben lokal
+*- Offline*
+*- no camera*
+*- no microfon*
+*- Only WLAN-signals*
+*- Logs are only lokal*
 
 Start:
 python radar.py
