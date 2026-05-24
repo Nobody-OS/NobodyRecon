@@ -1,8 +1,6 @@
 import os
 import math
 import time
-import random
-import sys
 import subprocess
 import json
 from datetime import datetime
@@ -16,45 +14,38 @@ SIZE = 21
 CENTER = SIZE // 2
 ECHO_LIFE = 3
 
-MODE = "test"
-if len(sys.argv) > 1:
-    MODE = sys.argv[1].lower()
-
 os.makedirs("logs", exist_ok=True)
 
-# -------------------- Live Scan für Termux --------------------
+echo_points = []
+nets = []
+
 def live_scan():
-    try:
-        result = subprocess.run(
-            ["termux-wifi-scaninfo"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        data = json.loads(result.stdout)
-        networks = []
+    result = subprocess.run(
+        ["termux-wifi-scaninfo"],
+        capture_output=True,
+        text=True,
+        timeout=5
+    )
 
-        for n in data:
-            ssid = n.get("ssid") or "Hidden"
-            signal = n.get("level", -100)
+    data = json.loads(result.stdout or "[]")
+    networks = []
 
-            caps = n.get("capabilities", "")
-            open_net = ("WEP" not in caps and "WPA" not in caps)
+    for n in data:
+        ssid = n.get("ssid") or "Hidden"
+        signal = n.get("level", -100)
 
-            networks.append((ssid, signal, open_net))
+        caps = n.get("capabilities", "")
+        open_net = ("WPA2" not in caps and "WPA3" not in caps and "WEP" not in caps)
 
-        return networks
+        networks.append((ssid, signal, open_net))
 
-    except Exception:
-        return []
+    return networks
 
 def log_scan(networks):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("logs/radar.log", "a") as f:
         for ssid, signal, open_net in networks:
             f.write(f"{ts} | {ssid} | {signal} | {'OPEN' if open_net else 'SECURE'}\n")
-
-echo_points = []
 
 def draw_radar(networks):
     global echo_points
@@ -63,13 +54,11 @@ def draw_radar(networks):
     grid[CENTER][CENTER] = "@"
 
     new_points = []
-    if networks:
-        angle_step = 360 / len(networks)
-    else:
-        angle_step = 360
+    angle_step = 360 / len(networks) if networks else 360
 
     for i, (ssid, signal, open_net) in enumerate(networks):
-        dist = min(10, max(1, int((abs(signal) - 30) / 5)))
+        dist = int(max(1, min(9, (100 + signal) / 10)))
+
         angle = math.radians(i * angle_step)
         x = int(CENTER + math.cos(angle) * dist)
         y = int(CENTER + math.sin(angle) * dist)
@@ -82,45 +71,34 @@ def draw_radar(networks):
 
         new_points.append((x, y, color, ECHO_LIFE))
 
-    updated_echo = []
-    for x, y, color, life in echo_points:
-        if life > 0:
-            updated_echo.append((x, y, color, life - 1))
-    echo_points = updated_echo + new_points
+    echo_points = [
+        (x, y, c, l - 1)
+        for (x, y, c, l) in echo_points
+        if l > 0
+    ]
+
+    echo_points.extend(new_points)
 
     for x, y, color, _ in echo_points:
         if 0 <= x < SIZE and 0 <= y < SIZE and (x, y) != (CENTER, CENTER):
             grid[y][x] = f"{color}*{RESET}"
 
-    os.system("cls" if os.name == "nt" else "clear")
+    os.system("clear")
 
-    title = "TEST RADAR" if MODE == "test" else "LIVE RADAR"
-    print(f"NobodyRecon – {title}\n")
+    print("LIVE RADAR\n")
 
     for row in grid:
         print(" ".join(row))
 
-    print("\nLegende:")
-    print(" @ = du")
-    print(" grün * = verschlüsselt")
-    print(" rot * = offen")
-    print(" gelb * = sehr nah\n")
+    print("\n@ = du | grün = sicher | rot = offen | gelb = stark")
 
     for ssid, signal, open_net in networks:
         status = "OFFEN" if open_net else "OK"
-        warn = " !!!" if open_net and signal > -50 else ""
-        print(f"{ssid[:20]:20} {signal:>4} dBm {status}{warn}")
+        print(f"{ssid[:20]:20} {signal:>4} dBm {status}")
 
 while True:
     try:
-        if MODE == "live":
-            nets_live = live_scan()
-            if nets_live:
-                nets = nets_live
-            else:
-                print("\n[!] Live Scan liefert keine Daten – Testmodus aktiv\n")
-                MODE = "test"
-
+        nets = live_scan()
         log_scan(nets)
         draw_radar(nets)
         time.sleep(3)
