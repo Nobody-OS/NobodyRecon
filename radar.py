@@ -17,36 +17,49 @@ ECHO_LIFE = 3
 os.makedirs("logs", exist_ok=True)
 
 echo_points = []
-nets = []
 
+# -------------------- LIVE SCAN --------------------
 def live_scan():
-    result = subprocess.run(
-        ["termux-wifi-scaninfo"],
-        capture_output=True,
-        text=True,
-        timeout=5
-    )
+    try:
+        result = subprocess.run(
+            ["termux-wifi-scaninfo"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
 
-    data = json.loads(result.stdout or "[]")
-    networks = []
+        try:
+            data = json.loads(result.stdout)
+        except:
+            data = []
 
-    for n in data:
-        ssid = n.get("ssid") or "Hidden"
-        signal = n.get("level", -100)
+        networks = []
 
-        caps = n.get("capabilities", "")
-        open_net = ("WPA2" not in caps and "WPA3" not in caps and "WEP" not in caps)
+        for n in data:
+            ssid = n.get("ssid") or "Hidden"
+            signal = n.get("level", -100)
+            caps = n.get("capabilities", "")
 
-        networks.append((ssid, signal, open_net))
+            open_net = ("WPA2" not in caps and "WPA3" not in caps and "WEP" not in caps)
 
-    return networks
+            networks.append((ssid, signal, open_net))
 
+        return networks
+
+    except:
+        return []
+
+# -------------------- LOG --------------------
 def log_scan(networks):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("logs/radar.log", "a") as f:
-        for ssid, signal, open_net in networks:
-            f.write(f"{ts} | {ssid} | {signal} | {'OPEN' if open_net else 'SECURE'}\n")
+    try:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open("logs/radar.log", "a") as f:
+            for ssid, signal, open_net in networks:
+                f.write(f"{ts} | {ssid} | {signal} | {'OPEN' if open_net else 'SECURE'}\n")
+    except:
+        pass
 
+# -------------------- RADAR --------------------
 def draw_radar(networks):
     global echo_points
 
@@ -54,9 +67,18 @@ def draw_radar(networks):
     grid[CENTER][CENTER] = "@"
 
     new_points = []
-    angle_step = 360 / len(networks) if networks else 360
+
+    if not networks:
+        os.system("clear")
+        print("LIVE RADAR\n")
+        print("Keine Daten...")
+        time.sleep(2)
+        return
+
+    angle_step = 360 / len(networks)
 
     for i, (ssid, signal, open_net) in enumerate(networks):
+
         dist = int(max(1, min(9, (100 + signal) / 10)))
 
         angle = math.radians(i * angle_step)
@@ -71,17 +93,18 @@ def draw_radar(networks):
 
         new_points.append((x, y, color, ECHO_LIFE))
 
-    echo_points = [
-        (x, y, c, l - 1)
-        for (x, y, c, l) in echo_points
-        if l > 0
-    ]
+    # Echo sauber abbauen
+    updated = []
+    for x, y, c, l in echo_points:
+        if l > 1:
+            updated.append((x, y, c, l - 1))
 
-    echo_points.extend(new_points)
+    echo_points = updated + new_points
 
     for x, y, color, _ in echo_points:
-        if 0 <= x < SIZE and 0 <= y < SIZE and (x, y) != (CENTER, CENTER):
-            grid[y][x] = f"{color}*{RESET}"
+        if 0 <= x < SIZE and 0 <= y < SIZE:
+            if (x, y) != (CENTER, CENTER):
+                grid[y][x] = f"{color}*{RESET}"
 
     os.system("clear")
 
@@ -90,12 +113,17 @@ def draw_radar(networks):
     for row in grid:
         print(" ".join(row))
 
-    print("\n@ = du | grün = sicher | rot = offen | gelb = stark")
+    print("\nLegende:")
+    print("@ = du")
+    print("grün = sicher")
+    print("rot = offen")
+    print("gelb = starkes Signal\n")
 
     for ssid, signal, open_net in networks:
         status = "OFFEN" if open_net else "OK"
         print(f"{ssid[:20]:20} {signal:>4} dBm {status}")
 
+# -------------------- LOOP --------------------
 while True:
     try:
         nets = live_scan()
@@ -105,3 +133,6 @@ while True:
 
     except KeyboardInterrupt:
         break
+
+    except:
+        time.sleep(3)
